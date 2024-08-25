@@ -3,7 +3,8 @@
 import datetime
 import hashlib
 import json
-from flask import Flask, jsonify
+from flask import Flask, jsonify, Response
+from collections import OrderedDict
 
 # 1. Building a blockchain
 
@@ -20,7 +21,7 @@ class Blockchain:
         block = {
             "index": len(self.chain) + 1,
             "timestamps": str(datetime.datetime.now()),
-            "proof": proof,
+            "proof": proof,  # proof can be recognized as Nonce
             "prev_hash": prev_hash,
         }
         self.chain.append(block)
@@ -42,7 +43,8 @@ class Blockchain:
             # prev = 5, new = 7 -> hash(12)
             # => 2 different inputs return the same output
             hash_operation = hashlib.sha256(str(new_proof**2 - prev_proof**2).encode()).hexdigest()
-            # .encode() to convert the string to byte string for sha256
+            # .encode() to convert the string to byte string for
+            # The operation inside sha256() can be different, based on the chain creator
             # Require: cryptographic hash starting with 4 leading 0s
             if hash_operation[:4] == "0000":
                 check_proof = True
@@ -87,3 +89,50 @@ app = Flask(__name__)
 
 # Creating a Blockchain
 blockchain = Blockchain()
+
+
+# Mining a new block
+@app.route("/mine", methods=["GET"])
+def mine_block():
+    prev_block = blockchain.get_prev_block()
+    prev_proof = prev_block["proof"]
+    prev_hash = blockchain.hash(prev_block)
+
+    new_proof = blockchain.proof_of_work(prev_proof)
+    new_block = blockchain.create_block(new_proof, prev_hash)
+
+    response = {
+        "message": "Congratulations, you have mined a block",
+        "index": new_block["index"],
+        "timestamps": new_block["timestamps"],
+        "proof": new_block["proof"],
+        "prev_hash": new_block["prev_hash"],
+    }
+    return jsonify(response), 200
+
+
+# Get the full blockchain
+@app.route("/get-chain", methods=["GET"])
+def get_chain():
+    # create_block() append a new block
+    # Blockchain.chain is a List
+    response = {"length": len(blockchain.chain), "chain": blockchain.chain}
+    return jsonify(response), 200
+    # If you want the output with the length on the top
+    # response = json.dumps({"length": len(blockchain.chain), "chain": blockchain.chain}, sort_keys=False)
+    # return Response(response, mimetype="application/json"), 200
+
+
+# Check if the chain is valid
+@app.route("/is-valid", methods=["GET"])
+def is_chain_valid():
+    is_valid = blockchain.is_chain_valid(blockchain.chain)
+    if is_valid:
+        response = {"message": "The blockchain is valid, nothing is suspicious!"}
+    else:
+        response = {"message": "Something is wrong, the chain is not valid!"}
+    return jsonify(response), 200
+
+
+# Running the app
+app.run(host="0.0.0.0", port=5000)
